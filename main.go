@@ -16,11 +16,13 @@ var FILE string
 var CSS string
 var PORT string
 var reloadChan = make(chan bool)
+var Conn *websocket.Conn
 
 type Md struct {
     Title string
     Css string
     Markdown string
+    Port string
 }
 
 var md *Md
@@ -39,7 +41,8 @@ func init() {
 
     md.Title = FILE
     md.Css = CSS
-    md.Markdown = ""
+    md.Markdown = "测试"
+    md.Port = PORT
 }
 
 func main() {
@@ -48,28 +51,40 @@ func main() {
 
     go watcher()
 
-	var handler http.HandlerFunc = func(res http.ResponseWriter, req *http.Request) {
+    http.HandleFunc("/",index)
+    http.HandleFunc("/ws",ws)
 
-        ws := websocket.Upgrader{}
-        conn,err := ws.Upgrade(res,req,nil)
+    fmt.Println("Service start at 8080")
+
+	if err := http.ListenAndServe(":" + PORT, nil); err != nil {
+        panic(err)
+    }
+}
+
+// Browser get html page.
+func index(res http.ResponseWriter,req *http.Request){
+    Html(res)
+}
+
+// Browser get websocket.
+func ws(res http.ResponseWriter,req *http.Request){
+        conn,err := (&websocket.Upgrader{CheckOrigin:func(r *http.Request) bool {return true}}).Upgrade(res,req,nil)
 
         if err != nil {
             fmt.Println(err)
         }
-
+        Conn = conn
+        
+        go func(){
         
         for{
             <-reloadChan
             data := []byte{}
             buffer := bytes.NewBuffer(data)
             Html(buffer)
-            conn.WriteMessage(0,data)
+            conn.WriteMessage(websocket.TextMessage,data)
         }
-	}
-    fmt.Println("Service start at 8080")
-	if err := http.ListenAndServe(":" + PORT, handler); err != nil {
-        panic(err)
-    }
+        }()
 }
 
 func Html(w io.Writer){
@@ -83,8 +98,14 @@ func Html(w io.Writer){
         <div id="content"></div>
         <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
         <script>
-            document.getElementById('content').innerHTML =
-            marked("{{.Markdown}}");
+            window.onload = () => {
+                let md = "{{.Markdown}}";
+                let conn = new WebSocket("ws://localhost:{{.Port}}/ws")
+                conn.onmessage = (ret) => {
+                    md = ret.data;
+                    document.getElementById('content').innerHTML = marked(md);
+                };
+            }
         </script>
     </body>
 </html>
