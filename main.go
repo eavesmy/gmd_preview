@@ -2,24 +2,28 @@ package main
 
 import (
 	"flag"
-	"io"
 	"fmt"
+	"github.com/fsnotify/fsnotify"
 	"github.com/gorilla/websocket"
 	"html/template"
+	"io"
+	"io/ioutil"
 	"net/http"
-	"os"
-	"time"
 )
 
 var reloadChan = make(chan bool)
 var Conn *websocket.Conn
-var File *os.File
 
 type Md struct {
 	Title    string
 	Css      string
 	Markdown []byte
 	Port     string
+	Text     string
+}
+
+func (m *Md) toString() string {
+	return string(m.Markdown)
 }
 
 var md *Md
@@ -37,7 +41,11 @@ func init() {
 	if md.Title == "" {
 		panic("Require markdown file path.")
 	}
-	File,_ = os.Open(md.Title)
+	var err error
+	md.Markdown, err = ioutil.ReadFile(md.Title)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func main() {
@@ -72,6 +80,7 @@ func ws(res http.ResponseWriter, req *http.Request) {
 
 // Gen html data.
 func Html(w io.Writer) {
+    md.Text = md.toString()
 	temp := template.New("html")
 	temp.Parse(`
 <html>
@@ -88,10 +97,10 @@ func Html(w io.Writer) {
     <body>
         <div id="content"></div>
         <script>
-            let md = {{.Markdown}};
+            let md = {{.Text}};
             window.onload = () => {
                 render();
-                let conn = new WebSocket("ws://localhost:8080/ws")
+                let conn = new WebSocket("ws://eva7base.com:8080/ws")
                 conn.onmessage = (ret) => {
                     console.log(ret)
                     md = ret.data;
@@ -110,17 +119,29 @@ func Html(w io.Writer) {
 
 // use long poll for platform compatibility and stay code sample
 func watcher() {
-	readFile()
-}
 
-func readFile(){
-	b := []byte{}
-	File.Read(b)
-	if len(md.Markdown) != len(b) {
-		md.Markdown = b
-		reloadChan <- true
+	watch, err := fsnotify.NewWatcher()
+	if err != nil {
+		panic(err)
 	}
-	time.AfterFunc(5, readFile)
+
+	done := make(chan bool)
+	go func() {
+		for {
+			select {
+			case event := <-watch.Events:
+				fmt.Println("event", event)
+				reloadChan <- true
+			case err := <-watch.Errors:
+				fmt.Println("error", err)
+			}
+		}
+	}()
+
+	if err = watch.Add(md.Title); err != nil {
+		fmt.Println("watch file err:", err)
+	}
+	<-done
 }
 
 // Send md data to client.
