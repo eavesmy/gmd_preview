@@ -1,29 +1,30 @@
 package main
 
 import (
-	"bytes"
 	"flag"
+	"io"
 	"fmt"
 	"github.com/gorilla/websocket"
 	"html/template"
-	"io"
-	"io/ioutil"
 	"net/http"
+	"os"
+	"time"
 )
 
 var reloadChan = make(chan bool)
 var Conn *websocket.Conn
+var File *os.File
 
 type Md struct {
 	Title    string
 	Css      string
-	Markdown string
+	Markdown []byte
 	Port     string
-	File     string
 }
 
 var md *Md
 
+// init params.
 func init() {
 
 	md = &Md{}
@@ -36,9 +37,7 @@ func init() {
 	if md.Title == "" {
 		panic("Require markdown file path.")
 	}
-
-	b, _ := ioutil.ReadFile(md.Title)
-	md.Markdown = string(b)
+	File,_ = os.Open(md.Title)
 }
 
 func main() {
@@ -71,6 +70,7 @@ func ws(res http.ResponseWriter, req *http.Request) {
 	Conn = conn
 }
 
+// Gen html data.
 func Html(w io.Writer) {
 	temp := template.New("html")
 	temp.Parse(`
@@ -108,10 +108,22 @@ func Html(w io.Writer) {
 	temp.Execute(w, md)
 }
 
+// use long poll for platform compatibility and stay code sample
 func watcher() {
-
+	readFile()
 }
 
+func readFile(){
+	b := []byte{}
+	File.Read(b)
+	if len(md.Markdown) != len(b) {
+		md.Markdown = b
+		reloadChan <- true
+	}
+	time.AfterFunc(5, readFile)
+}
+
+// Send md data to client.
 func write() {
 	for {
 		<-reloadChan
@@ -120,9 +132,6 @@ func write() {
 			continue
 		}
 
-		data := []byte{}
-		buffer := bytes.NewBuffer(data)
-		Html(buffer)
-		Conn.WriteMessage(websocket.TextMessage, data)
+		Conn.WriteMessage(websocket.TextMessage, []byte(md.Markdown))
 	}
 }
