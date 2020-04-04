@@ -3,12 +3,12 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/fsnotify/fsnotify"
 	"github.com/gorilla/websocket"
 	"html/template"
 	"io"
 	"io/ioutil"
 	"net/http"
+	"time"
 )
 
 var reloadChan = make(chan bool)
@@ -16,6 +16,7 @@ var Conn *websocket.Conn
 
 type Md struct {
 	Title    string
+	Width string
 	Css      string
 	Markdown []byte
 	Port     string
@@ -36,6 +37,7 @@ func init() {
 	flag.StringVar(&md.Port, "port", "8080", "Service port")
 	flag.StringVar(&md.Title, "file", "", "Markdown file path")
 	flag.StringVar(&md.Css, "css", "https://eva7base.com/css/sspai.css", "Markdown css file.Can use network location or local path.")
+	flag.StringVar(&md.Width, "width", "80vw", "Markdown area. Default 80vw")
 	flag.Parse()
 
 	if md.Title == "" {
@@ -56,7 +58,7 @@ func main() {
 	http.HandleFunc("/", index)
 	http.HandleFunc("/ws", ws)
 
-	fmt.Println("Service start at",md.Port)
+	fmt.Println("Service start at", md.Port)
 
 	if err := http.ListenAndServe(":"+md.Port, nil); err != nil {
 		panic(err)
@@ -80,7 +82,7 @@ func ws(res http.ResponseWriter, req *http.Request) {
 
 // Gen html data.
 func Html(w io.Writer) {
-    md.Text = md.toString()
+	md.Text = md.toString()
 	temp := template.New("html")
 	temp.Parse(`
 <html>
@@ -89,7 +91,7 @@ func Html(w io.Writer) {
     <title>{{.Title}}</title>
     <style>
         #content {
-            width: 80vw;
+            width: {{.Width}};
             margin: 0 auto;
         }
     </style>
@@ -102,7 +104,6 @@ func Html(w io.Writer) {
                 render();
                 let conn = new WebSocket("ws://localhost:8080/ws")
                 conn.onmessage = (ret) => {
-                    console.log(ret)
                     md = ret.data;
                     render();
                 };
@@ -119,29 +120,17 @@ func Html(w io.Writer) {
 
 // use long poll for platform compatibility and stay code sample
 func watcher() {
-
-	watch, err := fsnotify.NewWatcher()
-	if err != nil {
-		panic(err)
+	ticker := time.NewTicker(2 * time.Second)
+	for {
+		<-ticker.C
+		readFile()
 	}
+}
 
-	done := make(chan bool)
-	go func() {
-		for {
-			select {
-			case event := <-watch.Events:
-				fmt.Println("event", event)
-				reloadChan <- true
-			case err := <-watch.Errors:
-				fmt.Println("error", err)
-			}
-		}
-	}()
-
-	if err = watch.Add(md.Title); err != nil {
-		fmt.Println("watch file err:", err)
-	}
-	<-done
+func readFile() {
+	md.Markdown, _ = ioutil.ReadFile(md.Title)
+	md.Text = md.toString()
+	reloadChan <- true
 }
 
 // Send md data to client.
