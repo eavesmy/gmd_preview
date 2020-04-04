@@ -56,7 +56,7 @@ func main() {
 	http.HandleFunc("/", index)
 	http.HandleFunc("/ws", ws)
 
-	fmt.Println("Service start at 8080")
+	fmt.Println("Service start at",md.Port)
 
 	if err := http.ListenAndServe(":"+md.Port, nil); err != nil {
 		panic(err)
@@ -100,7 +100,7 @@ func Html(w io.Writer) {
             let md = {{.Text}};
             window.onload = () => {
                 render();
-                let conn = new WebSocket("ws://eva7base.com:8080/ws")
+                let conn = new WebSocket("ws://localhost:8080/ws")
                 conn.onmessage = (ret) => {
                     console.log(ret)
                     md = ret.data;
