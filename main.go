@@ -3,12 +3,13 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/gorilla/websocket"
 	"html/template"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 var reloadChan = make(chan bool)
@@ -16,7 +17,7 @@ var Conn *websocket.Conn
 
 type Md struct {
 	Title    string
-	Width string
+	Width    string
 	Css      string
 	Markdown []byte
 	Port     string
@@ -101,15 +102,12 @@ func Html(w io.Writer) {
         <script>
             let md = {{.Text}};
             window.onload = () => {
-                render();
+                document.getElementById('content').innerHTML = marked(md);
                 let conn = new WebSocket("ws://localhost:8080/ws")
                 conn.onmessage = (ret) => {
                     md = ret.data;
                     render();
                 };
-            }
-            function render(){
-                document.getElementById('content').innerHTML = marked(md);
             }
         </script>
     </body>
